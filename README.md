@@ -11,6 +11,13 @@ No installation required — everything works from a single HTML file.
 
 ---
 
+
+# Screenshot
+
+![Synced Video Player Screenshot](screenshot.png)
+
+---
+
 # Features
 
 - Multi-video synchronized playback
