@@ -1,0 +1,1769 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Synced Video Player</title>
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" id="themeColorMeta" content="#f4f7fb" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel2: #edf2f8;
+      --panel3: #dfe7f2;
+      --topbar: rgba(244, 247, 251, 0.92);
+      --text: #111827;
+      --muted: #5f6b7a;
+      --accent: #2b6de0;
+      --danger: #c93d3d;
+      --border: #d7dfe8;
+      --input-bg: #f8fafc;
+      --video-bg: #0b1020;
+      --drop-bg: linear-gradient(135deg, rgba(43, 109, 224, 0.08), rgba(255, 255, 255, 0.75)), #edf2f8;
+      --video-card-size: 360px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111318;
+        --panel: #1b1f2a;
+        --panel2: #252b38;
+        --panel3: #30384a;
+        --topbar: rgba(17, 19, 24, 0.96);
+        --text: #eef2f7;
+        --muted: #9aa4b2;
+        --accent: #6ea8fe;
+        --danger: #ff6b6b;
+        --border: #333b4c;
+        --input-bg: #10141d;
+        --video-bg: #05070b;
+        --drop-bg: linear-gradient(135deg, rgba(110, 168, 254, 0.08), rgba(255, 255, 255, 0.02)), #10141d;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--topbar);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 18px;
+      backdrop-filter: blur(10px);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(5, auto) minmax(240px, 280px) minmax(320px, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.15s ease;
+    }
+
+    button:hover { background: var(--panel3); }
+    button:active { transform: translateY(1px); }
+
+    .primary {
+      background: var(--accent);
+      color: #08111f;
+      border-color: transparent;
+      font-weight: 700;
+    }
+
+    .danger {
+      color: var(--danger);
+    }
+
+    .timelineWrap {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-width: 240px;
+    }
+
+    .sizeWrap {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-width: 240px;
+    }
+
+    .sizeLabel {
+      color: var(--muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .sizeValue {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 52px;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .time {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 112px;
+      text-align: right;
+    }
+
+    main {
+      width: 100%;
+      padding: 18px;
+    }
+
+    .grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(var(--video-card-size), var(--video-card-size)));
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    .drop {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      min-height: 0;
+      background: var(--drop-bg);
+      display: grid;
+      place-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drop.dragover {
+      outline: 3px dashed var(--accent);
+      outline-offset: -12px;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      background: var(--video-bg);
+      object-fit: contain;
+      display: none;
+    }
+
+    .loaded video {
+      display: block;
+    }
+
+    .youtubeHost {
+      width: 100%;
+      height: 100%;
+      display: none;
+      background: var(--video-bg);
+      border: 0;
+    }
+
+    .loaded .placeholder {
+      display: none;
+    }
+
+    .card[data-kind="youtube"] .youtubeHost {
+      display: block;
+    }
+
+    .card[data-kind="youtube"] video {
+      display: none;
+    }
+
+    .card[data-kind="youtube"] .placeholder {
+      display: none;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: var(--muted);
+      padding: 24px;
+      line-height: 1.6;
+    }
+
+    .placeholder strong {
+      display: block;
+      color: var(--text);
+      font-size: 20px;
+      margin-bottom: 6px;
+    }
+
+    .cardControls {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 10px;
+    }
+
+    .reorderGroup {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      justify-self: start;
+    }
+
+    .reorderBtn {
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 4px 7px;
+      font-size: 12px;
+      line-height: 1;
+      min-width: 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .reorderBtn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .card.reordering {
+      z-index: 1;
+    }
+
+    .card.is-playing .cardControls {
+      display: none;
+    }
+
+    .fileName {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    label {
+      display: inline-grid;
+      grid-template-columns: auto 72px;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    input[type="number"] {
+      width: 72px;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 4px 6px;
+      font-size: 12px;
+    }
+
+    .cardControls button {
+      padding: 6px 10px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+
+    .cardControls .reorderBtn {
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+
+    .urlGroup {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      justify-self: start;
+    }
+
+    .urlBtn {
+      padding: 6px 8px;
+      font-size: 12px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+
+    .hint {
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 14px 2px 0;
+      font-size: 14px;
+    }
+
+    @media (max-width: 760px) {
+      .controls {
+        grid-template-columns: repeat(5, auto);
+      }
+
+      .sizeWrap {
+        display: none;
+      }
+
+      .sizeWrap,
+      .timelineWrap {
+        grid-column: 1 / -1;
+        min-width: 0;
+      }
+
+      #resyncBtn {
+        grid-column: 1 / -1;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .cardControls {
+        grid-template-columns: auto 1fr;
+        row-gap: 6px;
+        column-gap: 8px;
+        align-items: start;
+        padding: 8px;
+      }
+
+      .reorderGroup,
+      .fileName,
+      label,
+      .urlGroup,
+      .cardControls button:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .fileName {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      label {
+        grid-template-columns: auto minmax(0, 1fr);
+        width: 100%;
+        white-space: normal;
+      }
+
+      input[type="number"] {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .reorderGroup,
+      .urlGroup {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        align-items: stretch;
+      }
+
+      .reorderBtn,
+      .urlBtn {
+        flex: 1 1 calc(50% - 4px);
+      }
+
+      .cardControls > .danger {
+        grid-column: 1 / -1;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="controls">
+      <button class="primary" id="playBtn">Play</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="startBtn">Home</button>
+      <button id="addBtn">Add</button>
+      <button id="shareBtn">Share Link</button>
+      <div class="sizeWrap">
+        <span class="sizeLabel">Display size</span>
+        <input id="sizeSlider" type="range" min="240" max="9999" step="10" value="360" />
+        <div class="sizeValue" id="sizeValue">360px</div>
+      </div>
+      <div class="timelineWrap">
+        <input id="timeline" type="range" min="0" max="0" step="0.001" value="0" />
+        <div class="time"><span id="curTime">0:00.000</span> / <span id="maxTime">0:00.000</span></div>
+      </div>
+      <button id="resyncBtn">Resync</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="videoGrid" class="grid"></section>
+  </main>
+
+  <script>
+    const grid = document.getElementById('videoGrid');
+    const playBtn = document.getElementById('playBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const startBtn = document.getElementById('startBtn');
+    const addBtn = document.getElementById('addBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const sizeSlider = document.getElementById('sizeSlider');
+    const sizeValue = document.getElementById('sizeValue');
+    const resyncBtn = document.getElementById('resyncBtn');
+    const timeline = document.getElementById('timeline');
+    const curTimeEl = document.getElementById('curTime');
+    const maxTimeEl = document.getElementById('maxTime');
+    const themeColorMeta = document.getElementById('themeColorMeta');
+    const themeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+    const slots = [];
+    let isSeekingByUI = false;
+    let timelineSeekActive = false;
+    let rafId = null;
+    let activeSlot = null;
+    let masterTimeState = 0;
+    let youtubeApiPromise = null;
+    let youtubeApiRequested = false;
+
+    function syncThemeColorMeta() {
+      if (!themeColorMeta) return;
+      themeColorMeta.content = themeQuery && themeQuery.matches ? '#111318' : '#f4f7fb';
+    }
+
+    syncThemeColorMeta();
+    if (themeQuery && typeof themeQuery.addEventListener === 'function') {
+      themeQuery.addEventListener('change', syncThemeColorMeta);
+    } else if (themeQuery && typeof themeQuery.addListener === 'function') {
+      themeQuery.addListener(syncThemeColorMeta);
+    }
+
+    document.addEventListener('pointerdown', event => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null;
+      if (button) button.blur();
+    }, true);
+
+    document.addEventListener('pointerup', event => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null;
+      if (button) button.blur();
+    }, true);
+
+    function formatTime(sec) {
+      sec = Math.max(0, Number.isFinite(sec) ? sec : 0);
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      const ms = Math.floor((sec - Math.floor(sec)) * 1000);
+      return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+    }
+
+    function isYouTubeUrl(value) {
+      if (!value) return false;
+      try {
+        const url = new URL(value, window.location.href);
+        const host = url.hostname.toLowerCase();
+        return host.includes('youtube.com') || host === 'youtu.be' || host.endsWith('.youtu.be');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function parseYouTubeVideoId(value) {
+      try {
+        const url = new URL(value, window.location.href);
+        const host = url.hostname.toLowerCase();
+        if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+          const id = url.pathname.split('/').filter(Boolean)[0];
+          return id || null;
+        }
+
+        if (host.includes('youtube.com')) {
+          const v = url.searchParams.get('v');
+          if (v) return v;
+
+          const parts = url.pathname.split('/').filter(Boolean);
+          const embedIndex = parts.indexOf('embed');
+          if (embedIndex >= 0 && parts[embedIndex + 1]) return parts[embedIndex + 1];
+          const shortsIndex = parts.indexOf('shorts');
+          if (shortsIndex >= 0 && parts[shortsIndex + 1]) return parts[shortsIndex + 1];
+        }
+      } catch (e) {}
+
+      return null;
+    }
+
+    function normalizeSourceInput(source) {
+      if (!source) return null;
+
+      if (typeof File !== 'undefined' && source instanceof File) {
+        return { kind: 'file', file: source, label: source.name };
+      }
+
+      if (typeof source === 'string') {
+        return { kind: isYouTubeUrl(source) ? 'youtube' : 'url', url: source, label: source };
+      }
+
+      return source;
+    }
+
+    function getLoadedSlots() {
+      return slots.filter(s => s.loaded);
+    }
+
+    function updateSlotKind(slot, kind) {
+      if (!slot) return;
+      slot.kind = kind || 'empty';
+      if (slot.card) slot.card.dataset.kind = slot.kind;
+    }
+
+    function updateSlotLoadedState(slot, loaded) {
+      if (!slot) return;
+      slot.loaded = !!loaded;
+      if (slot.card) slot.card.classList.toggle('loaded', slot.loaded);
+      updateUrlControls(slot);
+    }
+
+    function updateUrlControls(slot) {
+      if (!slot) return;
+
+      const canCopy = !!slot.loaded && (slot.kind === 'url' || slot.kind === 'youtube') && !!slot.sourceUrl;
+      if (slot.urlCopyBtn) {
+        slot.urlCopyBtn.hidden = !canCopy;
+        slot.urlCopyBtn.disabled = !canCopy;
+      }
+
+      if (slot.urlPasteBtn) {
+        slot.urlPasteBtn.disabled = false;
+      }
+    }
+
+    function setSlotPlayingUi(slot, playing) {
+      if (!slot || !slot.card) return;
+      slot.card.classList.toggle('is-playing', !!playing);
+    }
+
+    function clearSlotMedia(slot, { keepLabel = false } = {}) {
+      if (!slot) return;
+
+      slot.loadToken = (slot.loadToken || 0) + 1;
+
+      if (slot.youtubePlayer && typeof slot.youtubePlayer.destroy === 'function') {
+        try {
+          slot.youtubePlayer.destroy();
+        } catch (e) {}
+      }
+
+      slot.youtubePlayer = null;
+      slot.youtubeReady = false;
+      slot.pendingSeek = 0;
+      slot.pendingPlay = 0;
+      slot.youtubeSeekCooldownUntil = 0;
+      slot.youtubeLastSeekTarget = null;
+      setSlotPlayingUi(slot, false);
+
+      if (slot.objectUrl) {
+        URL.revokeObjectURL(slot.objectUrl);
+        slot.objectUrl = null;
+      }
+
+      if (slot.video) {
+        slot.video.pause();
+        slot.video.removeAttribute('src');
+        try {
+          slot.video.load();
+        } catch (e) {}
+      }
+
+      if (slot.youtubeHost) slot.youtubeHost.innerHTML = '';
+      updateSlotLoadedState(slot, false);
+      updateSlotKind(slot, 'empty');
+      slot.sourceUrl = '';
+      if (!keepLabel) setSlotSourceLabel(slot, 'No file');
+      if (slot.drop) slot.drop.style.aspectRatio = '16 / 9';
+      updateUrlControls(slot);
+    }
+
+    function applySlotMetadata(slot, label, kind, sourceUrl) {
+      if (!slot) return;
+      slot.sourceUrl = sourceUrl || '';
+      updateSlotKind(slot, kind);
+      updateSlotLoadedState(slot, true);
+      setSlotSourceLabel(slot, label || sourceUrl || 'No file');
+      updateUrlControls(slot);
+    }
+
+    async function loadVideoUrlSource(slot, url, label = url) {
+      if (!slot || !url) return;
+      clearSlotMedia(slot, { keepLabel: true });
+
+      const loadToken = ++slot.loadToken;
+      applySlotMetadata(slot, label, 'url', url);
+      slot.video.src = url;
+
+      const handleMetadata = () => {
+        if (slot.loadToken !== loadToken) return;
+        const w = slot.video.videoWidth || 16;
+        const h = slot.video.videoHeight || 9;
+        slot.drop.style.aspectRatio = `${w} / ${h}`;
+        updateTimeline(getTimelineMasterTime());
+        syncTo(getTimelineMasterTime(), true);
+      };
+
+      const handleError = () => {
+        if (slot.loadToken !== loadToken) return;
+        setSlotSourceLabel(slot, `${label || url} (failed to load)`);
+      };
+
+      slot.video.addEventListener('loadedmetadata', handleMetadata, { once: true });
+      slot.video.addEventListener('error', handleError, { once: true });
+
+      try {
+        slot.video.load();
+      } catch (e) {}
+    }
+
+    async function loadYouTubeSource(slot, url, label = url) {
+      if (!slot || !url) return;
+      clearSlotMedia(slot, { keepLabel: true });
+
+      const loadToken = ++slot.loadToken;
+      const videoId = parseYouTubeVideoId(url);
+      if (!videoId) {
+        setSlotSourceLabel(slot, `${label || url} (invalid YouTube URL)`);
+        return;
+      }
+
+      applySlotMetadata(slot, label, 'youtube', url);
+      slot.youtubeReady = false;
+      slot.youtubeHost.textContent = 'Loading YouTube video...';
+
+      try {
+        await loadYouTubeApi();
+      } catch (e) {
+        if (slot.loadToken !== loadToken) return;
+        setSlotSourceLabel(slot, `${label || url} (failed to load)`);
+        return;
+      }
+
+      if (slot.loadToken !== loadToken) return;
+
+      slot.youtubeHost.innerHTML = '';
+      const player = new YT.Player(slot.youtubeHost, {
+        videoId,
+        playerVars: {
+          autoplay: 0,
+          controls: 1,
+          playsinline: 1,
+          rel: 0,
+          modestbranding: 1
+        },
+        events: {
+          onReady: () => {
+            if (slot.loadToken !== loadToken) return;
+            slot.youtubeReady = true;
+            updateTimeline(getTimelineMasterTime());
+            syncTo(getTimelineMasterTime(), true);
+            if (slot.pendingPlay > 0 && !isSlotPaused(slot)) {
+              slot.pendingPlay = 0;
+            }
+            if (slot.pendingPlay > 0 && shouldPlayAtMasterTime(slot, getTimelineMasterTime(), getReferenceSlot())) {
+              slot.pendingPlay = 0;
+              try {
+                player.playVideo();
+              } catch (e) {}
+            }
+          },
+          onStateChange: event => {
+            if (slot.loadToken !== loadToken) return;
+            if (!window.YT) return;
+
+            if (event.data === YT.PlayerState.PLAYING) {
+              setSlotPlayingUi(slot, true);
+              slot.pendingPlay = 0;
+              slot.youtubeSeekCooldownUntil = performance.now() + 400;
+              startLoop();
+            }
+
+            if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+              setSlotPlayingUi(slot, false);
+              slot.pendingPlay = 0;
+              const anyPlaying = getLoadedSlots().some(s => !isSlotPaused(s));
+              if (!anyPlaying) stopLoop();
+            }
+
+            if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+              updateTimeline(getTimelineMasterTime());
+            }
+          },
+          onError: () => {
+            if (slot.loadToken !== loadToken) return;
+            setSlotSourceLabel(slot, `${label || url} (failed to load)`);
+          }
+        }
+      });
+
+      slot.youtubePlayer = player;
+      slot.drop.style.aspectRatio = '16 / 9';
+    }
+
+    async function loadSource(slot, source) {
+      const normalized = normalizeSourceInput(source);
+      if (!normalized) return;
+
+      if (normalized.kind === 'file' || normalized.file) {
+        const file = normalized.file;
+        if (!file || !(file.type || '').startsWith('video/')) {
+          alert('Please select a video file.');
+          return;
+        }
+
+        clearSlotMedia(slot, { keepLabel: true });
+        const loadToken = ++slot.loadToken;
+        slot.kind = 'file';
+        slot.sourceUrl = '';
+        slot.objectUrl = URL.createObjectURL(file);
+        updateSlotKind(slot, 'file');
+        updateSlotLoadedState(slot, true);
+        setSlotSourceLabel(slot, file.name);
+        slot.card.classList.add('loaded');
+        setSlotPlayingUi(slot, false);
+        slot.drop.style.aspectRatio = '16 / 9';
+        slot.video.src = slot.objectUrl;
+
+        slot.video.addEventListener('loadedmetadata', () => {
+          if (slot.loadToken !== loadToken) return;
+          const w = slot.video.videoWidth || 16;
+          const h = slot.video.videoHeight || 9;
+          slot.drop.style.aspectRatio = `${w} / ${h}`;
+          updateTimeline(getTimelineMasterTime());
+          syncTo(getTimelineMasterTime(), true);
+        }, { once: true });
+
+        try {
+          slot.video.load();
+        } catch (e) {}
+        return;
+      }
+
+      const url = normalized.url || '';
+      const label = normalized.label || url;
+
+      if (!url) return;
+
+      if (normalized.kind === 'youtube' || isYouTubeUrl(url)) {
+        await loadYouTubeSource(slot, url, label);
+        return;
+      }
+
+      await loadVideoUrlSource(slot, url, label);
+    }
+
+    function getReferenceSlot() {
+      if (activeSlot && slots.includes(activeSlot) && activeSlot.loaded) return activeSlot;
+      const loaded = getLoadedSlots();
+      return loaded[0] || null;
+    }
+
+    function setActiveSlot(slot) {
+      if (slot && slot.loaded) activeSlot = slot;
+    }
+
+    function refreshSlotLabels() {
+      slots.forEach((slot, index) => {
+        if (slot.placeholderTitle) slot.placeholderTitle.textContent = `Video ${index + 1}`;
+        if (slot.moveLeftBtn) slot.moveLeftBtn.disabled = index === 0;
+        if (slot.moveRightBtn) slot.moveRightBtn.disabled = index === slots.length - 1;
+      });
+    }
+
+    function isYouTubeSlot(slot) {
+      return slot && slot.kind === 'youtube';
+    }
+
+    function getSlotDuration(slot) {
+      if (!slot) return 0;
+      if (isYouTubeSlot(slot)) {
+        const player = slot.youtubePlayer;
+        if (!player || typeof player.getDuration !== 'function') return 0;
+        const duration = Number(player.getDuration());
+        return Number.isFinite(duration) ? Math.max(0, duration) : 0;
+      }
+
+      return Number.isFinite(slot.video?.duration) ? Math.max(0, slot.video.duration) : 0;
+    }
+
+    function getSlotCurrentTime(slot) {
+      if (!slot) return 0;
+      if (isYouTubeSlot(slot)) {
+        const player = slot.youtubePlayer;
+        if (!player || typeof player.getCurrentTime !== 'function') return 0;
+        const current = Number(player.getCurrentTime());
+        return Number.isFinite(current) ? Math.max(0, current) : 0;
+      }
+
+      return Number(slot.video?.currentTime || 0);
+    }
+
+    function isSlotPaused(slot) {
+      if (!slot) return true;
+      if (isYouTubeSlot(slot)) {
+        const player = slot.youtubePlayer;
+        if (!player || typeof player.getPlayerState !== 'function' || !window.YT) return true;
+        return player.getPlayerState() !== YT.PlayerState.PLAYING;
+      }
+
+      return !!slot.video?.paused;
+    }
+
+    function setSlotPlaybackRate(slot, rate) {
+      if (!slot) return;
+      if (isYouTubeSlot(slot)) return;
+      if (slot.video && slot.video.playbackRate !== rate) slot.video.playbackRate = rate;
+    }
+
+    function seekYouTubeSlot(slot, time, force = false) {
+      if (!slot) return;
+
+      const player = slot.youtubePlayer;
+      if (!player || !slot.youtubeReady || typeof player.seekTo !== 'function') return;
+
+      const now = performance.now();
+      const cooldownActive = now < (slot.youtubeSeekCooldownUntil || 0);
+
+      if (!force) {
+        if (slot.pendingPlay > 0 || cooldownActive) return;
+      }
+
+      slot.youtubeLastSeekTarget = time;
+      slot.youtubeSeekCooldownUntil = now + (force ? 150 : 1000);
+
+      try {
+        player.seekTo(time, true);
+      } catch (e) {}
+    }
+
+    function setSlotCurrentTime(slot, time, force = false) {
+      if (!slot) return;
+      if (isYouTubeSlot(slot)) {
+        seekYouTubeSlot(slot, time, force);
+        return;
+      }
+
+      if (!slot.video) return;
+      try {
+        slot.video.currentTime = time;
+      } catch (e) {}
+    }
+
+    function playSlot(slot) {
+      if (!slot) return;
+      if (isYouTubeSlot(slot)) {
+        const player = slot.youtubePlayer;
+        if (!player || !slot.youtubeReady || typeof player.playVideo !== 'function') {
+          slot.pendingPlay = 1;
+          return;
+        }
+
+        if (slot.pendingPlay > 0) return;
+        if (typeof player.getPlayerState === 'function' && window.YT && player.getPlayerState() === YT.PlayerState.PLAYING) {
+          slot.pendingPlay = 0;
+          return;
+        }
+
+        slot.pendingPlay = 1;
+        try {
+          player.playVideo();
+        } catch (e) {
+          slot.pendingPlay = 0;
+        }
+        return;
+      }
+
+      if (!slot.loaded || !slot.video.paused || slot.pendingPlay > 0) return;
+
+      slot.pendingPlay += 1;
+      let playResult;
+      try {
+        playResult = slot.video.play();
+      } catch (e) {
+        slot.pendingPlay = Math.max(0, slot.pendingPlay - 1);
+        return;
+      }
+
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {
+          slot.pendingPlay = Math.max(0, slot.pendingPlay - 1);
+        });
+      }
+    }
+
+    function pauseSlot(slot) {
+      if (!slot) return;
+      if (isYouTubeSlot(slot)) {
+        const player = slot.youtubePlayer;
+        slot.pendingPlay = 0;
+        if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+        return;
+      }
+
+      if (slot.video && !slot.video.paused) slot.video.pause();
+    }
+
+    function setSlotSourceLabel(slot, label) {
+      if (slot && slot.fileName) slot.fileName.textContent = label || 'No file';
+    }
+
+    async function loadYouTubeApi() {
+      if (window.YT && window.YT.Player) return window.YT;
+      if (youtubeApiPromise) return youtubeApiPromise;
+
+      youtubeApiPromise = new Promise((resolve, reject) => {
+        const previousReady = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          if (typeof previousReady === 'function') previousReady();
+          resolve(window.YT);
+        };
+
+        const script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.async = true;
+        script.onerror = () => reject(new Error('Failed to load YouTube iframe API.'));
+        document.head.appendChild(script);
+      });
+
+      return youtubeApiPromise;
+    }
+
+    function parseInitialSources() {
+      const params = new URLSearchParams(window.location.search);
+      const sources = [];
+
+      for (let i = 1; i <= 3; i++) {
+        const src = params.get(`src${i}`);
+        if (!src) continue;
+        sources.push({
+          kind: isYouTubeUrl(src) ? 'youtube' : 'url',
+          url: src,
+          label: src,
+          offset: params.get(`off${i}`) ?? '0'
+        });
+      }
+
+      return sources;
+    }
+
+    function buildShareUrl() {
+      const url = new URL(window.location.href);
+      const params = new URLSearchParams();
+      const shareableSlots = slots.filter(slot => slot.loaded && (slot.kind === 'url' || slot.kind === 'youtube') && slot.sourceUrl);
+
+      shareableSlots.forEach((slot, index) => {
+        params.set(`src${index + 1}`, slot.sourceUrl || '');
+        params.set(`off${index + 1}`, String(getOffset(slot) || 0));
+      });
+
+      url.search = params.toString();
+      url.hash = '';
+      return url.toString();
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      let ok = false;
+
+      try {
+        ok = document.execCommand('copy');
+      } catch (e) {
+        ok = false;
+      }
+
+      textarea.remove();
+      return ok;
+    }
+
+    function resolvePastedSource(text) {
+      if (!text) return null;
+
+      const trimmed = String(text).trim();
+      if (!trimmed) return null;
+
+      try {
+        const url = new URL(trimmed, window.location.href);
+        const isCurrentApp = url.origin === window.location.origin && url.pathname === window.location.pathname;
+
+        if (isCurrentApp) {
+          for (let i = 1; i <= 3; i++) {
+            const src = url.searchParams.get(`src${i}`);
+            if (src) return src;
+          }
+        }
+
+        return url.toString();
+      } catch (e) {
+        return trimmed;
+      }
+    }
+
+    async function readClipboardText() {
+      if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+        return await navigator.clipboard.readText();
+      }
+
+      return window.prompt('Paste URL', '') || '';
+    }
+
+    async function copySlotUrl(slot) {
+      if (!slot || !slot.loaded || !slot.sourceUrl) {
+        alert('No URL is loaded in this slot.');
+        return;
+      }
+
+      const ok = await copyTextToClipboard(slot.sourceUrl);
+      if (!ok) {
+        window.prompt('Copy URL', slot.sourceUrl);
+      }
+    }
+
+    async function pasteSlotUrl(slot) {
+      const clipboardText = await readClipboardText();
+      const source = resolvePastedSource(clipboardText);
+      if (!source) {
+        alert('Clipboard does not contain a usable URL.');
+        return;
+      }
+
+      setActiveSlot(slot);
+      await loadSource(slot, source);
+    }
+
+    function animateGridReorder(mutator) {
+      const cards = slots.map(slot => slot.card);
+      const firstRects = new Map(cards.map(card => [card, card.getBoundingClientRect()]));
+
+      mutator();
+
+      const lastRects = new Map(cards.map(card => [card, card.getBoundingClientRect()]));
+      const animatedCards = [];
+
+      for (const card of cards) {
+        const first = firstRects.get(card);
+        const last = lastRects.get(card);
+        if (!first || !last) continue;
+
+        const dx = first.left - last.left;
+        const dy = first.top - last.top;
+        if (!dx && !dy) continue;
+
+        animatedCards.push({ card, dx, dy });
+        card.classList.add('reordering');
+        card.style.transition = 'transform 0s';
+        card.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+
+      if (!animatedCards.length) {
+        refreshSlotLabels();
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        for (const { card } of animatedCards) {
+          card.style.transition = 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1)';
+          card.style.transform = '';
+          card.addEventListener('transitionend', () => {
+            card.classList.remove('reordering');
+            card.style.transition = '';
+          }, { once: true });
+        }
+      });
+
+      refreshSlotLabels();
+    }
+
+    function moveSlot(slot, targetSlot, placeAfter = false) {
+      const fromIndex = slots.indexOf(slot);
+      const targetIndex = slots.indexOf(targetSlot);
+      if (fromIndex < 0 || targetIndex < 0 || slot === targetSlot) return;
+
+      animateGridReorder(() => {
+        slots.splice(fromIndex, 1);
+        let insertIndex = targetIndex + (placeAfter ? 1 : 0);
+        if (fromIndex < insertIndex) insertIndex -= 1;
+        slots.splice(insertIndex, 0, slot);
+
+        if (placeAfter) {
+          grid.insertBefore(slot.card, targetSlot.card.nextSibling);
+        } else {
+          grid.insertBefore(slot.card, targetSlot.card);
+        }
+      });
+    }
+
+    function moveSlotBy(slot, delta) {
+      const index = slots.indexOf(slot);
+      const targetIndex = index + delta;
+      if (index < 0 || targetIndex < 0 || targetIndex >= slots.length) return;
+      const targetSlot = slots[targetIndex];
+      moveSlot(slot, targetSlot, delta > 0);
+    }
+
+    function getOffset(slot) {
+      const n = parseFloat(slot.offsetInput.value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function getMasterTime() {
+      const ref = getReferenceSlot();
+      if (!ref) return Number(timeline.value) || 0;
+      return Math.max(0, getSlotCurrentTime(ref) - getOffset(ref));
+    }
+
+    function getTimelineMasterTime() {
+      return Number.isFinite(masterTimeState) ? masterTimeState : (Number(timeline.value) || 0);
+    }
+
+    function getMaxMasterDuration() {
+      const loaded = getLoadedSlots();
+      if (!loaded.length) return 0;
+      return Math.max(...loaded.map(slot => Math.max(0, getSlotDuration(slot) - getOffset(slot))));
+    }
+
+    function getVideoCardSizeLimit() {
+      return Math.max(240, Math.floor(grid.clientWidth || window.innerWidth || 240));
+    }
+
+    function getVideoGridGap() {
+      const style = window.getComputedStyle(grid);
+      const gap = parseFloat(style.columnGap || style.gap || '0');
+      return Number.isFinite(gap) ? gap : 0;
+    }
+
+    function updateVideoCardSizeBounds() {
+      const limit = getVideoCardSizeLimit();
+      sizeSlider.max = String(limit);
+
+      const current = Math.min(limit, Math.max(240, parseInt(sizeSlider.value, 10) || 360));
+      if (String(current) !== sizeSlider.value) {
+        sizeSlider.value = String(current);
+      }
+
+      return current;
+    }
+
+    function updateVideoCardSize() {
+      const size = updateVideoCardSizeBounds();
+      document.documentElement.style.setProperty('--video-card-size', `${size}px`);
+      sizeValue.textContent = `${size}px`;
+    }
+
+    function setInitialVideoCardSize() {
+      const limit = getVideoCardSizeLimit();
+      const gap = getVideoGridGap();
+      const initialSize = Math.max(240, Math.min(limit, Math.floor((limit - gap) / 2)));
+      sizeSlider.value = String(initialSize);
+      updateVideoCardSize();
+    }
+
+    function beginTimelineSeek() {
+      timelineSeekActive = true;
+      isSeekingByUI = true;
+    }
+
+    function endTimelineSeek() {
+      if (!timelineSeekActive && !isSeekingByUI) return;
+
+      timelineSeekActive = false;
+      isSeekingByUI = false;
+
+      const masterTime = parseFloat(timeline.value) || 0;
+      syncTo(masterTime, true);
+    }
+
+    function isShortcutEditableTarget(target) {
+      if (!(target instanceof Element)) return false;
+      if (target.isContentEditable) return true;
+
+      const tag = target.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    }
+
+    function isShortcutButtonTarget(target) {
+      if (!(target instanceof Element)) return false;
+      if (target.tagName === 'BUTTON') return true;
+
+      if (target.tagName === 'INPUT') {
+        const type = (target.type || '').toLowerCase();
+        return type === 'button' || type === 'submit' || type === 'reset' || type === 'image';
+      }
+
+      return false;
+    }
+
+    function seekBy(deltaSeconds) {
+      const masterTime = Math.max(0, getTimelineMasterTime() + deltaSeconds);
+      syncTo(masterTime, true);
+    }
+
+    function togglePlayPause() {
+      const loaded = getLoadedSlots();
+      if (!loaded.length) return;
+
+      const anyPlaying = loaded.some(slot => !isSlotPaused(slot));
+      if (anyPlaying) {
+        pauseAll();
+      } else {
+        playAll();
+      }
+    }
+
+    function handleShortcutKeydown(event) {
+      if (event.defaultPrevented || event.repeat) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      if (event.key === ' ' || event.code === 'Space') {
+        if (isShortcutEditableTarget(event.target) || isShortcutButtonTarget(event.target)) return;
+        event.preventDefault();
+        togglePlayPause();
+        return;
+      }
+
+      if (event.key === 'Home') {
+        if (isShortcutEditableTarget(event.target)) return;
+        event.preventDefault();
+        goStart();
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        if (isShortcutEditableTarget(event.target)) return;
+        event.preventDefault();
+        seekBy(-10);
+        return;
+      }
+
+      if (event.key === 'ArrowRight') {
+        if (isShortcutEditableTarget(event.target)) return;
+        event.preventDefault();
+        seekBy(10);
+      }
+    }
+
+    function targetTimeFor(slot, masterTime) {
+      const offset = getOffset(slot);
+
+      // Allow pre-roll when the offset is negative.
+      // Example: offset = -1 means the real video starts 1 second ahead of master time 0.
+      const target = masterTime - offset;
+
+      return Math.min(
+        Math.max(0, target),
+        getSlotDuration(slot)
+      );
+    }
+
+    function shouldPlayAtMasterTime(slot, masterTime, ref = getReferenceSlot()) {
+      if (slot === ref) return true;
+
+      const duration = getSlotDuration(slot);
+      if (duration <= 0) return false;
+
+      const offset = getOffset(slot);
+      return masterTime >= offset && masterTime < offset + duration;
+    }
+
+    function syncTo(masterTime, hard = false) {
+      const loaded = getLoadedSlots();
+      const ref = getReferenceSlot();
+      const refPaused = ref ? isSlotPaused(ref) : true;
+
+      for (const slot of loaded) {
+        const target = targetTimeFor(slot, masterTime);
+        const currentTime = getSlotCurrentTime(slot);
+        const diff = Math.abs(currentTime - target);
+        const shouldPlay = shouldPlayAtMasterTime(slot, masterTime, ref);
+
+        if (isYouTubeSlot(slot) && slot.pendingPlay > 0) {
+          if (!shouldPlay) {
+            pauseSlot(slot);
+          } else if (refPaused && !isSlotPaused(slot)) {
+            pauseSlot(slot);
+          } else if (!refPaused && isSlotPaused(slot)) {
+            requestPlay(slot);
+          }
+
+          continue;
+        }
+
+        if (!shouldPlay) {
+          if (hard || diff > 0.08) {
+            if (Math.abs(diff) > 0.001) {
+              if (!isYouTubeSlot(slot)) {
+                slot.pendingSeek += 1;
+              }
+              setSlotCurrentTime(slot, target, hard);
+            }
+          }
+
+          pauseSlot(slot);
+          setSlotPlaybackRate(slot, 1);
+          continue;
+        }
+
+        if (isYouTubeSlot(slot)) {
+          if (hard || diff > 0.6) {
+            if (Math.abs(diff) > 0.001) setSlotCurrentTime(slot, target, hard);
+          }
+
+          if (refPaused && !isSlotPaused(slot)) {
+            pauseSlot(slot);
+          } else if (!refPaused && isSlotPaused(slot)) {
+            requestPlay(slot);
+          }
+
+          continue;
+        }
+
+        if (hard || diff > 0.08) {
+          if (Math.abs(diff) > 0.001) {
+            slot.pendingSeek += 1;
+            try {
+              setSlotCurrentTime(slot, target, hard);
+            } catch (e) {
+              slot.pendingSeek = Math.max(0, slot.pendingSeek - 1);
+            }
+          }
+        }
+
+        setSlotPlaybackRate(slot, 1);
+      }
+
+      updateTimeline(masterTime);
+    }
+
+    function requestPlay(slot) {
+      if (!slot || !slot.loaded) return;
+      if (isYouTubeSlot(slot)) {
+        playSlot(slot);
+        return;
+      }
+
+      playSlot(slot);
+    }
+
+    function playAll(sourceSlot = getReferenceSlot()) {
+      if (sourceSlot) setActiveSlot(sourceSlot);
+      const masterTime = getTimelineMasterTime();
+      const ref = sourceSlot || getReferenceSlot();
+      syncTo(masterTime, true);
+
+      for (const slot of getLoadedSlots()) {
+        if (!shouldPlayAtMasterTime(slot, masterTime, ref)) {
+          pauseSlot(slot);
+          continue;
+        }
+
+        if (slot === sourceSlot && !isSlotPaused(slot)) continue;
+        requestPlay(slot);
+      }
+
+      startLoop();
+    }
+
+    function pauseAll() {
+      for (const slot of getLoadedSlots()) pauseSlot(slot);
+      stopLoop();
+      updateTimeline(getTimelineMasterTime());
+    }
+
+    function goStart() {
+      pauseAll();
+      syncTo(0, true);
+    }
+
+    function updateTimeline(masterTime = getTimelineMasterTime()) {
+      masterTimeState = masterTime;
+      const max = getMaxMasterDuration();
+      timeline.max = String(max);
+      timeline.value = String(Math.min(masterTime, max));
+      curTimeEl.textContent = formatTime(masterTime);
+      maxTimeEl.textContent = formatTime(max);
+    }
+
+    function loop() {
+      const loaded = getLoadedSlots();
+      const ref = getReferenceSlot();
+      const refPaused = ref ? isSlotPaused(ref) : true;
+
+      if (!isSeekingByUI && ref) {
+        const masterTime = getMasterTime();
+
+        for (const slot of loaded) {
+          if (slot === ref) continue;
+          if (!isYouTubeSlot(slot) && (slot.pendingSeek > 0 || slot.pendingPlay > 0)) continue;
+          if (isYouTubeSlot(slot) && slot.pendingPlay > 0) continue;
+          const shouldPlay = shouldPlayAtMasterTime(slot, masterTime, ref);
+          const target = targetTimeFor(slot, masterTime);
+          const currentTime = getSlotCurrentTime(slot);
+          const diff = target - currentTime;
+
+          if (!shouldPlay) {
+            if (Math.abs(diff) > 0.08) {
+              setSlotCurrentTime(slot, target);
+            }
+            pauseSlot(slot);
+            setSlotPlaybackRate(slot, 1);
+          } else {
+            if (isYouTubeSlot(slot)) {
+              if (Math.abs(diff) > 0.6) {
+                setSlotCurrentTime(slot, target, false);
+              }
+            } else {
+              if (Math.abs(diff) > 0.15) {
+                setSlotCurrentTime(slot, target, false);
+                setSlotPlaybackRate(slot, 1);
+              } else if (Math.abs(diff) > 0.035) {
+                setSlotPlaybackRate(slot, diff > 0 ? 1.03 : 0.97);
+              } else {
+                setSlotPlaybackRate(slot, 1);
+              }
+            }
+
+            if (refPaused && !isSlotPaused(slot)) pauseSlot(slot);
+            if (!refPaused && isSlotPaused(slot) && target < getSlotDuration(slot)) {
+              requestPlay(slot);
+            }
+          }
+        }
+
+        updateTimeline(masterTime);
+      }
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function startLoop() {
+      if (!rafId) rafId = requestAnimationFrame(loop);
+    }
+
+    function stopLoop() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    function openFile(slot, file) {
+      return loadSource(slot, file);
+    }
+
+    function addSlot(initialSource = null) {
+      const index = slots.length + 1;
+
+      const card = document.createElement('article');
+      card.className = 'card';
+
+      const drop = document.createElement('div');
+      drop.className = 'drop';
+
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      const placeholderTitle = document.createElement('strong');
+      placeholderTitle.textContent = `Video ${index}`;
+      placeholder.append(
+        placeholderTitle,
+        document.createTextNode('Drag and drop a video here'),
+        document.createElement('br'),
+        document.createTextNode('or click to open a file')
+      );
+
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.controls = true;
+      video.playsInline = true;
+
+      const youtubeHost = document.createElement('div');
+      youtubeHost.className = 'youtubeHost';
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'video/*';
+      fileInput.hidden = true;
+
+      drop.append(placeholder, video, youtubeHost, fileInput);
+
+      const cardControls = document.createElement('div');
+      cardControls.className = 'cardControls';
+
+      const fileName = document.createElement('div');
+      fileName.className = 'fileName';
+      fileName.textContent = 'No file';
+
+      const reorderGroup = document.createElement('div');
+      reorderGroup.className = 'reorderGroup';
+
+      const moveLeftBtn = document.createElement('button');
+      moveLeftBtn.type = 'button';
+      moveLeftBtn.className = 'reorderBtn';
+      moveLeftBtn.textContent = '<';
+      moveLeftBtn.title = 'Move left';
+
+      const moveRightBtn = document.createElement('button');
+      moveRightBtn.type = 'button';
+      moveRightBtn.className = 'reorderBtn';
+      moveRightBtn.textContent = '>';
+      moveRightBtn.title = 'Move right';
+
+      reorderGroup.append(moveLeftBtn, moveRightBtn);
+
+      const label = document.createElement('label');
+      label.textContent = 'Offset (sec)';
+      const offsetInput = document.createElement('input');
+      offsetInput.type = 'number';
+      offsetInput.step = '0.001';
+      offsetInput.value = '0';
+      label.appendChild(offsetInput);
+
+      const urlGroup = document.createElement('div');
+      urlGroup.className = 'urlGroup';
+
+      const urlCopyBtn = document.createElement('button');
+      urlCopyBtn.type = 'button';
+      urlCopyBtn.className = 'urlBtn';
+      urlCopyBtn.textContent = 'Copy URL';
+      urlCopyBtn.title = 'Copy source URL';
+      urlCopyBtn.hidden = true;
+
+      const urlPasteBtn = document.createElement('button');
+      urlPasteBtn.type = 'button';
+      urlPasteBtn.className = 'urlBtn';
+      urlPasteBtn.textContent = 'Paste URL';
+      urlPasteBtn.title = 'Paste URL from clipboard';
+
+      urlGroup.append(urlCopyBtn, urlPasteBtn);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'danger';
+      removeBtn.textContent = 'Close';
+
+      cardControls.append(reorderGroup, fileName, label, urlGroup, removeBtn);
+      card.append(drop, cardControls);
+      grid.appendChild(card);
+
+      const slot = {
+        card,
+        drop,
+        video,
+        youtubeHost,
+        fileInput,
+        fileName,
+        moveLeftBtn,
+        moveRightBtn,
+        placeholderTitle,
+        offsetInput,
+        urlCopyBtn,
+        urlPasteBtn,
+        removeBtn,
+        objectUrl: null,
+        sourceUrl: '',
+        kind: 'empty',
+        youtubePlayer: null,
+        youtubeReady: false,
+        loadToken: 0,
+        loaded: false,
+        pendingSeek: 0,
+        pendingPlay: 0
+      };
+
+      slots.push(slot);
+      refreshSlotLabels();
+
+      moveLeftBtn.addEventListener('click', () => moveSlotBy(slot, -1));
+      moveRightBtn.addEventListener('click', () => moveSlotBy(slot, 1));
+      urlCopyBtn.addEventListener('click', () => copySlotUrl(slot));
+      urlPasteBtn.addEventListener('click', () => pasteSlotUrl(slot));
+
+      drop.addEventListener('click', e => {
+        if (slot.loaded) return;
+        if (e.target === video) return;
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', () => openFile(slot, fileInput.files[0]));
+
+      drop.addEventListener('dragover', e => {
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (!types.includes('Files')) return;
+        e.preventDefault();
+        drop.classList.add('dragover');
+      });
+
+      drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+
+      drop.addEventListener('drop', e => {
+        const files = e.dataTransfer?.files;
+        if (!files || !files.length) return;
+        e.preventDefault();
+        drop.classList.remove('dragover');
+        openFile(slot, files[0]);
+      });
+
+      offsetInput.addEventListener('change', () => {
+        setActiveSlot(slot);
+        syncTo(getTimelineMasterTime(), true);
+      });
+
+      video.addEventListener('play', () => {
+        if (slot.pendingPlay > 0) return;
+        setActiveSlot(slot);
+        playAll(slot);
+      });
+
+      video.addEventListener('playing', () => {
+        setSlotPlayingUi(slot, true);
+        if (slot.pendingPlay > 0) slot.pendingPlay = 0;
+      });
+
+      video.addEventListener('pause', () => {
+        setSlotPlayingUi(slot, false);
+        if (slot.pendingPlay > 0) slot.pendingPlay = 0;
+        const anyPlaying = getLoadedSlots().some(s => !isSlotPaused(s));
+        if (!anyPlaying) stopLoop();
+      });
+
+      video.addEventListener('ended', () => {
+        setSlotPlayingUi(slot, false);
+      });
+
+      video.addEventListener('seeked', () => {
+        if (slot.pendingSeek > 0) {
+          slot.pendingSeek = Math.max(0, slot.pendingSeek - 1);
+          return;
+        }
+
+        if (!isSeekingByUI) {
+          setActiveSlot(slot);
+          syncTo(getMasterTime(), true);
+        }
+      });
+
+      video.addEventListener('durationchange', updateTimeline);
+
+      removeBtn.addEventListener('click', () => {
+        const i = slots.indexOf(slot);
+        if (i >= 0) slots.splice(i, 1);
+        clearSlotMedia(slot);
+        card.remove();
+        if (activeSlot === slot) {
+          activeSlot = getLoadedSlots()[0] || null;
+        }
+        refreshSlotLabels();
+        updateTimeline();
+      });
+
+      if (initialSource && initialSource.offset != null) {
+        offsetInput.value = String(initialSource.offset);
+      }
+
+      if (initialSource) {
+        loadSource(slot, initialSource);
+      }
+
+      updateUrlControls(slot);
+
+      return slot;
+    }
+
+    playBtn.addEventListener('click', playAll);
+    pauseBtn.addEventListener('click', pauseAll);
+    startBtn.addEventListener('click', goStart);
+    addBtn.addEventListener('click', addSlot);
+    shareBtn.addEventListener('click', async () => {
+      const shareableSlots = slots.filter(slot => slot.loaded && (slot.kind === 'url' || slot.kind === 'youtube') && slot.sourceUrl);
+      if (!shareableSlots.length) {
+        alert('No shareable video URLs are loaded. Local files cannot be included in the link.');
+        return;
+      }
+
+      const shareUrl = buildShareUrl();
+      const copied = await copyTextToClipboard(shareUrl);
+      if (!copied) {
+        window.prompt('Share link', shareUrl);
+        return;
+      }
+
+      if (slots.some(slot => slot.loaded && slot.kind === 'file')) {
+        alert('Share link copied. Local files were omitted.');
+      }
+    });
+    sizeSlider.addEventListener('input', updateVideoCardSize);
+    window.addEventListener('resize', updateVideoCardSize);
+    window.addEventListener('keydown', handleShortcutKeydown);
+    resyncBtn.addEventListener('click', () => syncTo(getTimelineMasterTime(), true));
+
+    timeline.addEventListener('input', () => {
+      beginTimelineSeek();
+      const masterTime = parseFloat(timeline.value) || 0;
+      curTimeEl.textContent = formatTime(masterTime);
+      syncTo(masterTime, true);
+    });
+
+    timeline.addEventListener('change', endTimelineSeek);
+    timeline.addEventListener('pointerdown', beginTimelineSeek);
+    timeline.addEventListener('pointerup', endTimelineSeek);
+    timeline.addEventListener('pointercancel', endTimelineSeek);
+    window.addEventListener('mouseup', endTimelineSeek);
+
+    window.addEventListener('beforeunload', () => {
+      for (const slot of slots) {
+        if (slot.objectUrl) URL.revokeObjectURL(slot.objectUrl);
+      }
+    });
+
+    setInitialVideoCardSize();
+    const initialSources = parseInitialSources();
+    if (initialSources.length) {
+      initialSources.forEach(source => addSlot(source));
+    } else {
+      addSlot();
+      addSlot();
+    }
+    updateTimeline();
+  </script>
+</body>
+</html>
