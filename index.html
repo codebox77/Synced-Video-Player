@@ -32,7 +32,7 @@
       --input-bg: #f8fafc;
       --video-bg: #0b1020;
       --drop-bg: linear-gradient(135deg, rgba(43, 109, 224, 0.08), rgba(255, 255, 255, 0.75)), #edf2f8;
-      --video-card-size: 360px;
+      --video-cols: 2;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -159,8 +159,8 @@
     .grid {
       width: 100%;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(var(--video-card-size), var(--video-card-size)));
-      justify-content: center;
+      grid-template-columns: repeat(var(--video-cols), minmax(0, 1fr));
+      justify-content: stretch;
       gap: 16px;
     }
 
@@ -407,10 +407,6 @@
         grid-column: 1 / -1;
       }
 
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
       .cardControls {
         grid-template-columns: auto 1fr;
         row-gap: 6px;
@@ -481,9 +477,9 @@
       </label>
       <button id="shareBtn">Share Link</button>
       <div class="sizeWrap">
-        <span class="sizeLabel">Display size</span>
-        <input id="sizeSlider" type="range" min="240" max="9999" step="10" value="360" />
-        <div class="sizeValue" id="sizeValue">360px</div>
+        <span class="sizeLabel">Columns</span>
+        <input id="sizeSlider" type="range" min="1" max="6" step="1" value="2" />
+        <div class="sizeValue" id="sizeValue">2</div>
       </div>
       <div class="timelineWrap">
         <input id="timeline" type="range" min="0" max="0" step="0.01" value="0" />
@@ -515,6 +511,15 @@
     const themeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
     const pageParams = new URLSearchParams(window.location.search);
     const shouldAutostart = pageParams.get('autostart') === 'true' || pageParams.get('autoplay') === 'true';
+    const defaultGridColumns = 2;
+    const minGridColumns = 1;
+    const maxGridColumns = 6;
+    const requestedGridColumns = (() => {
+      const raw = pageParams.get('cols') ?? pageParams.get('columns');
+      const parsed = parseInt(raw ?? '', 10);
+      if (!Number.isFinite(parsed)) return defaultGridColumns;
+      return Math.max(minGridColumns, Math.min(maxGridColumns, parsed));
+    })();
 
     const slots = [];
     let isSeekingByUI = false;
@@ -530,6 +535,13 @@
     if (shareAutoplayChk) {
       shareAutoplayChk.checked = shouldAutostart;
     }
+    if (sizeSlider) {
+      sizeSlider.value = String(requestedGridColumns);
+    }
+    if (sizeValue) {
+      sizeValue.textContent = String(requestedGridColumns);
+    }
+    document.documentElement.style.setProperty('--video-cols', String(requestedGridColumns));
 
     function syncThemeColorMeta() {
       if (!themeColorMeta) return;
@@ -1120,6 +1132,8 @@
       const params = new URLSearchParams();
       const shareableSlots = slots.filter(slot => slot.loaded && (slot.kind === 'url' || slot.kind === 'youtube') && slot.sourceUrl);
 
+      params.set('cols', String(getGridColumnCount()));
+
       shareableSlots.forEach((slot, index) => {
         params.set(`src${index + 1}`, slot.sourceUrl || '');
         params.set(`off${index + 1}`, String(getOffset(slot) || 0));
@@ -1309,40 +1323,28 @@
       return Math.max(...loaded.map(slot => Math.max(0, getSlotDuration(slot) - getOffset(slot))));
     }
 
-    function getVideoCardSizeLimit() {
-      return Math.max(240, Math.floor(grid.clientWidth || window.innerWidth || 240));
+    function clampGridColumns(value) {
+      const numeric = Number.isFinite(value) ? Math.round(value) : defaultGridColumns;
+      return Math.max(minGridColumns, Math.min(maxGridColumns, numeric));
     }
 
-    function getVideoGridGap() {
-      const style = window.getComputedStyle(grid);
-      const gap = parseFloat(style.columnGap || style.gap || '0');
-      return Number.isFinite(gap) ? gap : 0;
+    function getGridColumnCount() {
+      return clampGridColumns(parseInt(sizeSlider.value, 10));
     }
 
-    function updateVideoCardSizeBounds() {
-      const limit = getVideoCardSizeLimit();
-      sizeSlider.max = String(limit);
-
-      const current = Math.min(limit, Math.max(240, parseInt(sizeSlider.value, 10) || 360));
-      if (String(current) !== sizeSlider.value) {
-        sizeSlider.value = String(current);
+    function updateGridColumns() {
+      const cols = getGridColumnCount();
+      if (String(cols) !== sizeSlider.value) {
+        sizeSlider.value = String(cols);
       }
 
-      return current;
+      document.documentElement.style.setProperty('--video-cols', String(cols));
+      sizeValue.textContent = String(cols);
     }
 
-    function updateVideoCardSize() {
-      const size = updateVideoCardSizeBounds();
-      document.documentElement.style.setProperty('--video-card-size', `${size}px`);
-      sizeValue.textContent = `${size}px`;
-    }
-
-    function setInitialVideoCardSize() {
-      const limit = getVideoCardSizeLimit();
-      const gap = getVideoGridGap();
-      const initialSize = Math.max(240, Math.min(limit, Math.floor((limit - gap) / 2)));
-      sizeSlider.value = String(initialSize);
-      updateVideoCardSize();
+    function setInitialGridColumns() {
+      sizeSlider.value = String(requestedGridColumns);
+      updateGridColumns();
     }
 
     function beginTimelineSeek() {
@@ -1894,8 +1896,7 @@
         alert('Share link copied. Local files were omitted.');
       }
     });
-    sizeSlider.addEventListener('input', updateVideoCardSize);
-    window.addEventListener('resize', updateVideoCardSize);
+    sizeSlider.addEventListener('input', updateGridColumns);
     window.addEventListener('keydown', handleShortcutKeydown);
     resyncBtn.addEventListener('click', () => syncTo(getTimelineMasterTime(), true));
 
@@ -1918,7 +1919,7 @@
       }
     });
 
-    setInitialVideoCardSize();
+    setInitialGridColumns();
     const initialSources = parseInitialSources();
     if (initialSources.length) {
       initialSources.forEach(source => addSlot(source));
