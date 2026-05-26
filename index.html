@@ -6,6 +6,16 @@
   <title>Synced Video Player</title>
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" id="themeColorMeta" content="#f4f7fb" />
+  <script>
+    (() => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('autostart') === 'true' || params.get('autoplay') === 'true') {
+          document.documentElement.classList.add('autostart-ui-hidden');
+        }
+      } catch (e) {}
+    })();
+  </script>
   <style>
     :root {
       color-scheme: light dark;
@@ -62,9 +72,13 @@
       backdrop-filter: blur(10px);
     }
 
+    html.autostart-ui-hidden .topbar {
+      display: none;
+    }
+
     .controls {
       display: grid;
-      grid-template-columns: repeat(5, auto) minmax(240px, 280px) minmax(320px, 1fr) auto;
+      grid-template-columns: repeat(6, auto) minmax(240px, 280px) minmax(320px, 1fr) auto;
       gap: 10px;
       align-items: center;
       max-width: 1400px;
@@ -203,6 +217,28 @@
       display: none;
     }
 
+    .cardTitle {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 3;
+      display: none;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: center;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.18));
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+    }
+
+    .card.has-title .cardTitle {
+      display: block;
+    }
+
     .card[data-kind="youtube"] .youtubeHost {
       display: block;
     }
@@ -231,7 +267,7 @@
 
     .cardControls {
       display: grid;
-      grid-template-columns: auto 1fr auto auto auto;
+      grid-template-columns: auto 1fr auto auto auto auto;
       gap: 8px;
       align-items: center;
       padding: 6px 10px;
@@ -323,6 +359,28 @@
       white-space: nowrap;
     }
 
+    .titleBtn {
+      padding: 6px 8px;
+      font-size: 12px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+
+    .shareToggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .shareToggle input {
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
     .hint {
       color: var(--muted);
       line-height: 1.5;
@@ -332,7 +390,7 @@
 
     @media (max-width: 760px) {
       .controls {
-        grid-template-columns: repeat(5, auto);
+        grid-template-columns: repeat(6, auto);
       }
 
       .sizeWrap {
@@ -364,8 +422,9 @@
       .reorderGroup,
       .fileName,
       label,
+      .titleBtn,
       .urlGroup,
-      .cardControls button:last-child {
+      .cardControls > .danger {
         grid-column: 1 / -1;
       }
 
@@ -402,6 +461,10 @@
         grid-column: 1 / -1;
         width: 100%;
       }
+
+      .titleBtn {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -412,6 +475,10 @@
       <button id="pauseBtn">Pause</button>
       <button id="startBtn">Home</button>
       <button id="addBtn">Add</button>
+      <label class="shareToggle" for="shareAutoplayChk">
+        <input id="shareAutoplayChk" type="checkbox" />
+        <span>AutoPlay</span>
+      </label>
       <button id="shareBtn">Share Link</button>
       <div class="sizeWrap">
         <span class="sizeLabel">Display size</span>
@@ -419,7 +486,7 @@
         <div class="sizeValue" id="sizeValue">360px</div>
       </div>
       <div class="timelineWrap">
-        <input id="timeline" type="range" min="0" max="0" step="0.001" value="0" />
+        <input id="timeline" type="range" min="0" max="0" step="0.01" value="0" />
         <div class="time"><span id="curTime">0:00.000</span> / <span id="maxTime">0:00.000</span></div>
       </div>
       <button id="resyncBtn">Resync</button>
@@ -437,6 +504,7 @@
     const startBtn = document.getElementById('startBtn');
     const addBtn = document.getElementById('addBtn');
     const shareBtn = document.getElementById('shareBtn');
+    const shareAutoplayChk = document.getElementById('shareAutoplayChk');
     const sizeSlider = document.getElementById('sizeSlider');
     const sizeValue = document.getElementById('sizeValue');
     const resyncBtn = document.getElementById('resyncBtn');
@@ -445,6 +513,8 @@
     const maxTimeEl = document.getElementById('maxTime');
     const themeColorMeta = document.getElementById('themeColorMeta');
     const themeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    const pageParams = new URLSearchParams(window.location.search);
+    const shouldAutostart = pageParams.get('autostart') === 'true' || pageParams.get('autoplay') === 'true';
 
     const slots = [];
     let isSeekingByUI = false;
@@ -454,6 +524,12 @@
     let masterTimeState = 0;
     let youtubeApiPromise = null;
     let youtubeApiRequested = false;
+    let autoStartLock = shouldAutostart;
+    let autostartMuted = shouldAutostart;
+
+    if (shareAutoplayChk) {
+      shareAutoplayChk.checked = shouldAutostart;
+    }
 
     function syncThemeColorMeta() {
       if (!themeColorMeta) return;
@@ -467,15 +543,37 @@
       themeQuery.addListener(syncThemeColorMeta);
     }
 
+    function revealTopbar() {
+      if (!document.documentElement.classList.contains('autostart-ui-hidden')) return;
+      document.documentElement.classList.remove('autostart-ui-hidden');
+      if (!autostartMuted) return;
+      autostartMuted = false;
+      for (const slot of getLoadedSlots()) {
+        if (isYouTubeSlot(slot) && slot.youtubePlayer && typeof slot.youtubePlayer.unMute === 'function') {
+          try {
+            slot.youtubePlayer.unMute();
+          } catch (e) {}
+        } else if (slot.video) {
+          slot.video.muted = false;
+          slot.video.defaultMuted = false;
+        }
+      }
+    }
+
     document.addEventListener('pointerdown', event => {
+      revealTopbar();
       const button = event.target instanceof Element ? event.target.closest('button') : null;
       if (button) button.blur();
     }, true);
 
     document.addEventListener('pointerup', event => {
+      revealTopbar();
       const button = event.target instanceof Element ? event.target.closest('button') : null;
       if (button) button.blur();
     }, true);
+
+    document.addEventListener('keydown', revealTopbar, true);
+    document.addEventListener('focusin', revealTopbar, true);
 
     function formatTime(sec) {
       sec = Math.max(0, Number.isFinite(sec) ? sec : 0);
@@ -565,9 +663,32 @@
       }
     }
 
+    function setSlotTitle(slot, title) {
+      if (!slot) return;
+
+      const normalized = String(title ?? '').trim();
+      slot.titleText = normalized;
+
+      if (slot.cardTitle) {
+        slot.cardTitle.textContent = normalized;
+      }
+
+      if (slot.card) {
+        slot.card.classList.toggle('has-title', !!normalized);
+      }
+    }
+
+    function promptSlotTitle(slot) {
+      if (!slot) return;
+      const nextTitle = window.prompt('Enter title', slot.titleText || '');
+      if (nextTitle === null) return;
+      setSlotTitle(slot, nextTitle);
+    }
+
     function setSlotPlayingUi(slot, playing) {
       if (!slot || !slot.card) return;
       slot.card.classList.toggle('is-playing', !!playing);
+      if (playing) autoStartLock = false;
     }
 
     function clearSlotMedia(slot, { keepLabel = false } = {}) {
@@ -626,6 +747,10 @@
 
       const loadToken = ++slot.loadToken;
       applySlotMetadata(slot, label, 'url', url);
+      if (autostartMuted) {
+        slot.video.muted = true;
+        slot.video.defaultMuted = true;
+      }
       slot.video.src = url;
 
       const handleMetadata = () => {
@@ -689,6 +814,11 @@
           onReady: () => {
             if (slot.loadToken !== loadToken) return;
             slot.youtubeReady = true;
+            if (autostartMuted && player && typeof player.mute === 'function') {
+              try {
+                player.mute();
+              } catch (e) {}
+            }
             updateTimeline(getTimelineMasterTime());
             syncTo(getTimelineMasterTime(), true);
             if (slot.pendingPlay > 0 && !isSlotPaused(slot)) {
@@ -755,6 +885,10 @@
         setSlotSourceLabel(slot, file.name);
         slot.card.classList.add('loaded');
         setSlotPlayingUi(slot, false);
+        if (autostartMuted) {
+          slot.video.muted = true;
+          slot.video.defaultMuted = true;
+        }
         slot.drop.style.aspectRatio = '16 / 9';
         slot.video.src = slot.objectUrl;
 
@@ -973,7 +1107,8 @@
           kind: isYouTubeUrl(src) ? 'youtube' : 'url',
           url: src,
           label: src,
-          offset: params.get(`off${i}`) ?? '0'
+          offset: params.get(`off${i}`) ?? '0',
+          title: params.get(`title${i}`) ?? ''
         });
       }
 
@@ -988,7 +1123,15 @@
       shareableSlots.forEach((slot, index) => {
         params.set(`src${index + 1}`, slot.sourceUrl || '');
         params.set(`off${index + 1}`, String(getOffset(slot) || 0));
+        if (slot.titleText) {
+          params.set(`title${index + 1}`, slot.titleText);
+        }
       });
+
+      if (shareAutoplayChk && shareAutoplayChk.checked) {
+        params.set('autostart', 'true');
+        params.set('autoplay', 'true');
+      }
 
       url.search = params.toString();
       url.hash = '';
@@ -1312,7 +1455,7 @@
     function syncTo(masterTime, hard = false) {
       const loaded = getLoadedSlots();
       const ref = getReferenceSlot();
-      const refPaused = ref ? isSlotPaused(ref) : true;
+      const refPaused = autoStartLock ? false : (ref ? isSlotPaused(ref) : true);
 
       for (const slot of loaded) {
         const target = targetTimeFor(slot, masterTime);
@@ -1334,7 +1477,7 @@
 
         if (!shouldPlay) {
           if (hard || diff > 0.08) {
-            if (Math.abs(diff) > 0.001) {
+            if (Math.abs(diff) > 0.01) {
               if (!isYouTubeSlot(slot)) {
                 slot.pendingSeek += 1;
               }
@@ -1349,7 +1492,7 @@
 
         if (isYouTubeSlot(slot)) {
           if (hard || diff > 0.6) {
-            if (Math.abs(diff) > 0.001) setSlotCurrentTime(slot, target, hard);
+            if (Math.abs(diff) > 0.01) setSlotCurrentTime(slot, target, hard);
           }
 
           if (refPaused && !isSlotPaused(slot)) {
@@ -1362,7 +1505,7 @@
         }
 
         if (hard || diff > 0.08) {
-          if (Math.abs(diff) > 0.001) {
+          if (Math.abs(diff) > 0.01) {
             slot.pendingSeek += 1;
             try {
               setSlotCurrentTime(slot, target, hard);
@@ -1389,6 +1532,7 @@
     }
 
     function playAll(sourceSlot = getReferenceSlot()) {
+      if (!getLoadedSlots().length) return;
       if (sourceSlot) setActiveSlot(sourceSlot);
       const masterTime = getTimelineMasterTime();
       const ref = sourceSlot || getReferenceSlot();
@@ -1430,7 +1574,7 @@
     function loop() {
       const loaded = getLoadedSlots();
       const ref = getReferenceSlot();
-      const refPaused = ref ? isSlotPaused(ref) : true;
+      const refPaused = autoStartLock ? false : (ref ? isSlotPaused(ref) : true);
 
       if (!isSeekingByUI && ref) {
         const masterTime = getMasterTime();
@@ -1520,12 +1664,15 @@
       const youtubeHost = document.createElement('div');
       youtubeHost.className = 'youtubeHost';
 
+      const cardTitle = document.createElement('div');
+      cardTitle.className = 'cardTitle';
+
       const fileInput = document.createElement('input');
       fileInput.type = 'file';
       fileInput.accept = 'video/*';
       fileInput.hidden = true;
 
-      drop.append(placeholder, video, youtubeHost, fileInput);
+      drop.append(placeholder, video, youtubeHost, cardTitle, fileInput);
 
       const cardControls = document.createElement('div');
       cardControls.className = 'cardControls';
@@ -1555,12 +1702,18 @@
       label.textContent = 'Offset (sec)';
       const offsetInput = document.createElement('input');
       offsetInput.type = 'number';
-      offsetInput.step = '0.001';
+      offsetInput.step = '0.01';
       offsetInput.value = '0';
       label.appendChild(offsetInput);
 
       const urlGroup = document.createElement('div');
       urlGroup.className = 'urlGroup';
+
+      const titleBtn = document.createElement('button');
+      titleBtn.type = 'button';
+      titleBtn.className = 'titleBtn';
+      titleBtn.textContent = 'Add Title';
+      titleBtn.title = 'Set or edit the title';
 
       const urlCopyBtn = document.createElement('button');
       urlCopyBtn.type = 'button';
@@ -1581,7 +1734,7 @@
       removeBtn.className = 'danger';
       removeBtn.textContent = 'Close';
 
-      cardControls.append(reorderGroup, fileName, label, urlGroup, removeBtn);
+      cardControls.append(reorderGroup, fileName, label, titleBtn, urlGroup, removeBtn);
       card.append(drop, cardControls);
       grid.appendChild(card);
 
@@ -1590,18 +1743,21 @@
         drop,
         video,
         youtubeHost,
+        cardTitle,
         fileInput,
         fileName,
         moveLeftBtn,
         moveRightBtn,
         placeholderTitle,
         offsetInput,
+        titleBtn,
         urlCopyBtn,
         urlPasteBtn,
         removeBtn,
         objectUrl: null,
         sourceUrl: '',
         kind: 'empty',
+        titleText: '',
         youtubePlayer: null,
         youtubeReady: false,
         loadToken: 0,
@@ -1615,6 +1771,7 @@
 
       moveLeftBtn.addEventListener('click', () => moveSlotBy(slot, -1));
       moveRightBtn.addEventListener('click', () => moveSlotBy(slot, 1));
+      titleBtn.addEventListener('click', () => promptSlotTitle(slot));
       urlCopyBtn.addEventListener('click', () => copySlotUrl(slot));
       urlPasteBtn.addEventListener('click', () => pasteSlotUrl(slot));
 
@@ -1700,6 +1857,12 @@
         offsetInput.value = String(initialSource.offset);
       }
 
+      if (initialSource && initialSource.title != null) {
+        setSlotTitle(slot, initialSource.title);
+      } else {
+        setSlotTitle(slot, '');
+      }
+
       if (initialSource) {
         loadSource(slot, initialSource);
       }
@@ -1764,6 +1927,9 @@
       addSlot();
     }
     updateTimeline();
+    if (shouldAutostart) {
+      requestAnimationFrame(() => playAll());
+    }
   </script>
 </body>
 </html>
